@@ -1,67 +1,53 @@
-import warnings
-warnings.filterwarnings('ignore')
-
 import pandas as pd
 import tiktoken
 import os
 import openai
-from langchain.document_loaders.csv_loader import CSVLoader
+from langchain.document_loaders.csv_loader import CSVLoader 
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores.chroma import Chroma
+import os
 from langchain_openai import ChatOpenAI
 import warnings
-from langchain.chains import RetrievalQA
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.prompts import PromptTemplate
 
-# Load the dataset
-file_path = 'Fashion_products_catalog.csv'
-df = pd.read_csv(file_path)
-
-# Display basic info about the dataset
-print("Dataset Info:")
-print(df.info())
-
-print("\nFirst 5 Rows:")
-print(df.head())
-
-# Check for missing values
-print("\nMissing Values in Each Column:")
-print(df.isnull().sum())
-
-df['PrimaryColor'].fillna('Unknown', inplace=True)
-
-print("\nMissing Values in Each Column:")
-print(df.isnull().sum())
 
 # Suppress deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# API Key Setup
-api_key = 'OPENAI_API_KEY'
+
+#from openai.embeddings_utils import get_embedding
+
+from langchain.chains import RetrievalQA
+from langchain.document_loaders import TextLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.llms import OpenAI
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import Chroma
+from langchain.document_loaders.csv_loader import CSVLoader
+from langchain.prompts import PromptTemplate
+
+
+api_key = 'Openai_key' 
 os.environ['OPENAI_API_KEY'] = api_key
 
 def recommend(query):
-    # Load data from CSV file
     loader = CSVLoader(file_path="fashion_updated.csv")
     data = loader.load()
 
-def recommend(query):
-    # Load data from CSV file
-    loader = CSVLoader(file_path="fashion_updated.csv")
-    data = loader.load()
-
-    # Split text into manageable chunks
+    # Text Splitter
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     texts = text_splitter.split_documents(data)
 
-    # Embeddings Model using OpenAI
+    # Embeddings Model (assuming you want to use OpenAIEmbeddings)
     embeddings = OpenAIEmbeddings(openai_api_key=api_key)
 
-    # Vector Database to store and retrieve documents
+    # LLM (Large Language Model) for document processing
+    #llm = OpenAI(openai_api_key=api_key)
+
+    # Vector Database for document search
     docsearch = Chroma.from_documents(texts, embeddings)
 
-    # Create a Prompt Template for recommendations
+    docs = docsearch.similarity_search(query, k=1)
+
     template = """
     You are a recommendation system for a fashion store that assists users in finding products that match their needs. For each query, suggest five products from the store with the following details:
 
@@ -74,44 +60,41 @@ def recommend(query):
     - Primary Color:
     - Brand:
 
+    Product Name: Women's Floral Print Summer Dress
+    - Description: A vibrant floral print dress made from lightweight, breathable fabric, perfect for summer outings. Features a flattering A-line silhouette with a cinched waist and knee-length hem.
+    - Price (INR): 1499
+    - Gender: Female
+    - Number of Images: 3
+    - Primary Color: Blue
+    - Brand: ZARA
+
+    Product Name: Men's Classic Fit Cotton Polo Shirt
+    - Description: A classic polo shirt crafted from soft, durable cotton. Ideal for both casual and semi-formal occasions. Features a ribbed collar and short sleeves.
+    - Price (INR): 999
+    - Gender: Male
+    - Number of Images: 4
+    - Primary Color: White
+    - Brand: Ralph Lauren
+
     {context}
 
     Question: {question}
     Your response:
     """
+
+
     PROMPT = PromptTemplate(
         template=template, input_variables=["context", "question"])
 
     chain_type_kwargs = {"prompt": PROMPT}
 
-    # Define the language model to use for retrieval-based QA
-    llm = ChatOpenAI(model_name='gpt-4', temperature=0)  # Changed to GPT-4
+    llm=ChatOpenAI(model_name='gpt-3.5-turbo', temperature=0) 
 
-    # Create the RetrievalQA chain
-    qa = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
+    qa = RetrievalQA.from_chain_type(llm=llm, 
+        chain_type="stuff", 
         retriever=docsearch.as_retriever(),
-        return_source_documents=True,
-        chain_type_kwargs=chain_type_kwargs
-    )
+        return_source_documents=True, 
+        chain_type_kwargs=chain_type_kwargs)
 
-    # Run the QA system with the query and retrieve result
-    result = qa({'query': query})
-
-    # Return the generated product recommendations
-    return result['result']
-
-import time
-import openai
-
-def recommend_with_backoff(query, max_retries=5):
-    for i in range(max_retries):
-        try:
-            return recommend(query)  # Call your recommendation function
-        except openai.error.RateLimitError:
-            if i == max_retries - 1:
-                raise
-            wait_time = 2 ** i  # Exponential backoff
-            print(f"Rate limit hit. Retrying in {wait_time} seconds.")
-            time.sleep(wait_time)
+    result = qa({'query':query})
+    return (result['result'])
